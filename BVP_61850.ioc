@@ -1,8 +1,10 @@
 #MicroXplorer Configuration settings - do not modify
 File.Version=6
+I2C2.DualAddressMode=I2C_DUALADDRESS_ENABLE
 I2C2.I2C_Mode=I2C_Standard
-I2C2.IPParameters=I2C_Mode,OwnAddress
-I2C2.OwnAddress=0x1f
+I2C2.IPParameters=I2C_Mode,OwnAddress,DualAddressMode,OwnAddress2
+I2C2.OwnAddress=0x3D
+I2C2.OwnAddress2=0x3E
 KeepUserPlacement=false
 Mcu.Family=STM32F4
 Mcu.IP0=I2C2

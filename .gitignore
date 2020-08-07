@@ -1,0 +1,9 @@
+*.d
+*.elf
+*.list
+*.map
+*.mk
+*.o
+
+
+/Debug/
