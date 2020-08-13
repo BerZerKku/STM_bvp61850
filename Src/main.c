@@ -24,7 +24,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "wrapper.hpp"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -73,109 +73,11 @@ static void MX_TIM6_Init(void);
 static void MX_I2C2_Init(void);
 /* USER CODE BEGIN PFP */
 
-#define TIME_RESET_I2C_MS 250
-uint32_t time = 0;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-  static uint16_t cnt = 0;
 
-  if (htim == &htim6) {
-    HAL_GPIO_TogglePin(TP1_GPIO_Port, TP1_Pin);
-
-    if (++cnt >= 1000) {
-      HAL_GPIO_TogglePin(LED1_VD7_GPIO_Port, LED1_VD7_Pin);
-      printf("i2c state = %X, error = %lX, mode = %X\n",
-          HAL_I2C_GetState(&hi2c2), HAL_I2C_GetError(&hi2c2),
-          HAL_I2C_GetMode(&hi2c2));
-      cnt = 0;
-    }
-
-    if (time > 0) {
-      time--;
-      if (time == 0) {
-        //				printf(">>> Reset : i2c state = %X, error = %X, mode = %X\n",
-        //						HAL_I2C_GetState(&hi2c2),
-        //						HAL_I2C_GetError(&hi2c2),
-        //						HAL_I2C_GetMode(&hi2c2));
-        HAL_I2C_DeInit(&hi2c2);
-        HAL_I2C_Init(&hi2c2);
-      }
-
-    }
-  }
-}
-
-uint16_t address = 0;
-uint8_t direction = 0;
-uint8_t state = 0;
-uint8_t buf[35];
-
-void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection,
-    uint16_t AddrMatchCode) {
-  uint8_t error = 20;
-
-  if (hi2c == &hi2c2) {
-    HAL_GPIO_TogglePin(LED2_VD8_GPIO_Port, LED2_VD8_Pin);
-
-    direction = TransferDirection;
-    address = AddrMatchCode >> 1;
-    //		printf(" >>> direction = %d, address = %X\n", direction, address);
-
-    if (address == 0x3D) {
-      if (direction == I2C_DIRECTION_TRANSMIT) {
-        HAL_I2C_Slave_Seq_Receive_IT(hi2c, &buf[0], 2, I2C_LAST_FRAME);
-      } else {
-        // TODO Если передавать меньшее кол-во байт, то ПО на ПК вылетает в вечную ошибку считывания
-        // 		При этом на ПК после перепрошивки МК работа возобнавляется!
-        //		Если передавать больше, то на работу это не влияет!
-        HAL_I2C_Slave_Seq_Transmit_IT(hi2c, buf, 35, I2C_LAST_FRAME);
-      }
-    } else if (address == 0x3E) {
-      if (direction == I2C_DIRECTION_TRANSMIT) {
-        // FIXME Если принимать меньшее кол-во байт, то ПО на ПК вылетает в вечную ошибку считывания
-        // При этом на ПК после перепрошивки МК работа возобнавляется!
-        // Если принимать больше, то на работу это не влияет!
-        HAL_I2C_Slave_Seq_Receive_IT(hi2c, buf, 35, I2C_LAST_FRAME);
-      }
-    }
-  }
-}
-
-void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c) {
-  if (hi2c == &hi2c2) {
-    if (address == 0x3D) {
-      // TODO Обработчик окончания записи адреса для чтения мастером.
-    } else if (address == 0x3E) {
-      // TODO Обработчик окончания записи данных мастером.
-    }
-  }
-}
-
-void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c) {
-  if (hi2c == &hi2c2) {
-    // TODO Обработчик окончания чтения данных мастером.
-  }
-}
-
-void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
-  if (hi2c == &hi2c2) {
-    uint32_t error = HAL_I2C_GetError(hi2c);
-    printf(" >>> Error = %lX, address = %X\n", error, address);
-
-    if (error & HAL_I2C_ERROR_AF) {
-      __HAL_I2C_CLEAR_FLAG(hi2c, HAL_I2C_ERROR_AF);
-    }
-  }
-}
-
-void HAL_I2C_AbortCpltCallback(I2C_HandleTypeDef *hi2c) {
-  if (hi2c == &hi2c2) {
-    printf(" >>> HAL_I2C_AbortCpltCallback(), address = %X\n", address);
-  }
-}
 
 /* USER CODE END 0 */
 
@@ -185,7 +87,7 @@ void HAL_I2C_AbortCpltCallback(I2C_HandleTypeDef *hi2c) {
  */
 int main(void) {
   /* USER CODE BEGIN 1 */
-  // TODO Исправить на cpp проект! http://mypractic.ru/urok-11-konvertirovanie-proekta-dlya-stm32-na-yazyke-c-v-proekt-c.html
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -206,7 +108,7 @@ int main(void) {
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_IWDG_Init();
+//  MX_IWDG_Init();
   MX_SPI1_Init();
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
@@ -216,45 +118,18 @@ int main(void) {
   MX_USB_DEVICE_Init();
   MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
-  printf("Hello STM32\n");
-  HAL_TIM_Base_Start_IT(&htim6);
 
-  HAL_GPIO_WritePin(LED2_VD8_GPIO_Port, LED2_VD8_Pin, GPIO_PIN_SET);
+  wrapperMainInit();
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
-    HAL_IWDG_Refresh(&hiwdg);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    GPIO_PinState pinstate = GPIO_PIN_RESET;
-
-    pinstate = HAL_GPIO_ReadPin(Sout7_GPIO_Port, Sout7_Pin);
-    HAL_GPIO_WritePin(ALARM_GPIO_Port, ALARM_Pin, pinstate);
-
-    pinstate = HAL_GPIO_ReadPin(Sout6_GPIO_Port, Sout6_Pin);
-    HAL_GPIO_WritePin(WARNING__GPIO_Port, WARNING__Pin, pinstate);
-
-    pinstate = HAL_GPIO_ReadPin(Sout5_GPIO_Port, Sout5_Pin);
-    HAL_GPIO_WritePin(HF_FAULT__GPIO_Port, HF_FAULT__Pin, pinstate);
-
-    pinstate = HAL_GPIO_ReadPin(Sout4_GPIO_Port, Sout4_Pin);
-    HAL_GPIO_WritePin(TEST_GOOSE__GPIO_Port, TEST_GOOSE__Pin, pinstate);
-
-    pinstate = HAL_GPIO_ReadPin(Sout2_GPIO_Port, Sout2_Pin);
-    HAL_GPIO_WritePin(COM_TR_GPIO_Port, COM_TR_Pin, pinstate);
-
-    pinstate = HAL_GPIO_ReadPin(Sout1_GPIO_Port, Sout1_Pin);
-    HAL_GPIO_WritePin(COM_RC_GPIO_Port, COM_RC_Pin, pinstate);
-
-    if (HAL_I2C_GetState(&hi2c2) == HAL_I2C_STATE_READY) {
-      time = TIME_RESET_I2C_MS;
-      // TODO добавить несколько попыток!
-      HAL_I2C_EnableListen_IT(&hi2c2);
-    }
+    wrapperMainLoop();
   }
   /* USER CODE END 3 */
 }
