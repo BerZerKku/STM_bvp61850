@@ -21,7 +21,6 @@ extern void wrapperMainInit();
 /// Вызов из бесконечного цикла main().
 extern void wrapperMainLoop();
 
-
 #ifdef __cplusplus
 }
 #endif
