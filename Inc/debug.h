@@ -24,12 +24,15 @@ public:
   enum msg_t {
     MSG_i2cWdTimerReset = 0,
     MSG_i2cActionTimeReset,
+    MSG_i2cErrorCounterAf,
     MSG_i2cErrorCounterReset,
     MSG_HAL_I2C_AbortCpltCallback,
     MSG_i2cAddrCallback_0x3D,
     MSG_i2cAddrCallback_0x3E,
+    MSG_i2cAddrCallbackError,
     MSG_rpiConnectionNo,
-    MSG_rpiReset
+    MSG_rpiReset,
+
   };
 
   Debug();

@@ -50,6 +50,9 @@ void Debug::proc() {
       case MSG_i2cActionTimeReset:
         printf("Reset by i2cActionTime!\n");
         break;
+      case MSG_i2cErrorCounterAf:
+        printf("MSG_i2cErrorCounterAf!\n");
+        break;
       case MSG_i2cErrorCounterReset:
         printf("Reset by i2cErrorCounter!\n");
         break;
@@ -62,6 +65,9 @@ void Debug::proc() {
 //      case MSG_i2cAddrCallback_0x3E:
 //        printf("i2cAddrCallback_0x3E!\n");
 //        break;
+      case MSG_i2cAddrCallbackError:
+        printf("MSG_i2cAddrCallbackError\n!");
+        break;
       case MSG_rpiConnectionNo:
         printf("rpiConnectionNo!\n");
         break;

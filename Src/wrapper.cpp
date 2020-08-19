@@ -24,6 +24,7 @@ extern UART_HandleTypeDef huart6;
 
 static void i2cReset(I2C_HandleTypeDef *hi2c);
 static void i2cActionStart(I2C_HandleTypeDef *hi2c, uint32_t size);
+static void i2cActionStop();
 static void i2cWatchDogReset();
 
 static void rpiWatchDog();
@@ -41,16 +42,20 @@ uint8_t direction = 0;
 uint8_t state = 0;
 uint8_t buf[35] = { 0 };
 
-bool i2cAction = false;
+volatile bool i2cAction = false;
 uint32_t i2cActionTime = 0;
 uint32_t i2cErrorCounter = 0;
+uint32_t i2cErrorCounterAf = 0;
 uint32_t i2cWdTimer = I2C_TIME_RESET_MS;
+uint64_t data = 0;
 
 bool rpiConnection = false;
 uint32_t rpiTimeToReset = RPI_REBOOT_TIME_MS;
 
 bool printDebug = true;
 uint32_t debug = 0;
+
+
 
 /**
  * @brief  Period elapsed callback in non-blocking mode
@@ -82,10 +87,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
     if ((i2cActionTime > 0) && i2cAction) {
       i2cActionTime--;
-      if (i2cActionTime == 0) {
-        Debug::addMsg(Debug::MSG_i2cActionTimeReset);
-        i2cReset(&hi2c2);
-      }
+    }
+
+    if (i2cAction && (i2cActionTime == 0)) {
+      // FIXME Иногда возникает данное событие. При этом всегда Debug::MSG_i2cErrorCounterAf.
+      // FIXME Сброс надо делать после нескольких ошибок!
+      Debug::addMsg(Debug::MSG_i2cActionTimeReset);
+      i2cReset(&hi2c2);
     }
 
     if (i2cErrorCounter >= I2C_MAX_ERROR_COUNTER) {
@@ -108,48 +116,54 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
  * @param  AddrMatchCode Address Match Code
  * @retval None
  */
-void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection,
-    uint16_t AddrMatchCode) {
-  HAL_StatusTypeDef status = HAL_ERROR;
-
-  if (hi2c == &hi2c2) {
-    direction = TransferDirection;
-    address = AddrMatchCode >> 1;
-    //    printf(" >>> direction = %d, address = %X\n", direction, address);
-
-    if (address == 0x3D) {
-      if (direction == I2C_DIRECTION_TRANSMIT) {
-        status = HAL_I2C_Slave_Seq_Receive_IT(hi2c, buf, 2, I2C_LAST_FRAME);
-        Debug::addMsg(Debug::MSG_i2cAddrCallback_0x3D);
-        i2cActionStart(hi2c, 2);
-      } else {
-        status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, buf, 35, I2C_LAST_FRAME);
-        Debug::addMsg(Debug::MSG_i2cAddrCallback_0x3D);
-        i2cActionStart(hi2c, 35);
-      }
-
-      rpiConnection = true;
-    } else if (address == 0x3E) {
-      if (direction == I2C_DIRECTION_TRANSMIT) {
-        status = HAL_I2C_Slave_Seq_Receive_IT(hi2c, buf, 35, I2C_LAST_FRAME);
-        Debug::addMsg(Debug::MSG_i2cAddrCallback_0x3E);
-        i2cActionStart(hi2c, 35);
-      }
-
-      rpiConnection = true;
-    }
-
-    if (status != HAL_OK) {
-      i2cErrorCounter++;
-    } else if (i2cErrorCounter > 0) {
-      i2cErrorCounter--;
-    }
-
-    rpiWatchDogReset();
-  }
-
-  HAL_GPIO_WritePin(TP2_GPIO_Port, TP2_Pin, GPIO_PIN_SET);
-}
+//void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection,
+//    uint16_t AddrMatchCode) {
+//  HAL_StatusTypeDef status = HAL_ERROR;
+//
+//  if (hi2c == &hi2c2) {
+//    direction = TransferDirection;
+//    address = AddrMatchCode >> 1;
+//    //    printf(" >>> direction = %d, address = %X\n", direction, address);
+//
+//    if (address == 0x3D) {
+//      if (direction == I2C_DIRECTION_TRANSMIT) {
+//        // Прием пакета с адресом пакета.
+//        status = HAL_I2C_Slave_Seq_Receive_IT(hi2c, buf, 2, I2C_LAST_FRAME);
+//        Debug::addMsg(Debug::MSG_i2cAddrCallback_0x3D);
+//        i2cActionStart(hi2c, 2);
+//      } else {
+//        // Передача пакета с принятым ранее адресом.
+//        status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, buf, 35, I2C_LAST_FRAME);
+//        Debug::addMsg(Debug::MSG_i2cAddrCallback_0x3D);
+//        i2cActionStart(hi2c, 35);
+//      }
+//
+//      rpiConnection = true;
+//    } else if (address == 0x3E) {
+//      if (direction == I2C_DIRECTION_TRANSMIT) {
+//        // Прием пакета с новыми значениями.
+//        status = HAL_I2C_Slave_Seq_Receive_IT(hi2c, buf, 35, I2C_LAST_FRAME);
+//        Debug::addMsg(Debug::MSG_i2cAddrCallback_0x3E);
+//        i2cActionStart(hi2c, 35);
+//      } else {
+//        // Передача последнего полученного пакета.
+//        status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, buf, 35, I2C_LAST_FRAME);
+//        Debug::addMsg(Debug::MSG_i2cAddrCallback_0x3E);
+//        i2cActionStart(hi2c, 35);
+//      }
+//
+//      rpiConnection = true;
+//    }
+//
+//    if (status != HAL_OK) {
+//      Debug::addMsg(Debug::MSG_i2cAddrCallbackError);
+//    }
+//
+//    rpiWatchDogReset();
+//  }
+//
+//  HAL_GPIO_WritePin(TP2_GPIO_Port, TP2_Pin, GPIO_PIN_SET);
+//}
 
 
 /**
@@ -160,14 +174,25 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection,
  */
 void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c) {
   if (hi2c == &hi2c2) {
-    if (address == 0x3D) {
-      // TODO Обработчик окончания записи адреса для чтения мастером.
-      // Должен занимать минимальное время, иначе не успевает начать!
-      i2cWatchDogReset();
-    } else if (address == 0x3E) {
-      // TODO Обработчик окончания записи данных мастером.
-      i2cWatchDogReset();
+//    if (address == 0x3D) {
+//      // TODO Обработчик окончания записи адреса для чтения мастером.
+//      // Должен занимать минимальное время, иначе не успевает начать!
+//      i2cActionStop();
+//      i2cWatchDogReset();
+//    } else if (address == 0x3E) {
+//      // TODO Обработчик окончания записи данных мастером.
+//      i2cActionStop();
+//      i2cWatchDogReset();
+//    }
+
+    i2cActionStop();
+
+    if (HAL_I2C_Slave_Transmit_IT(hi2c, buf, 35) != HAL_BUSY) {
+      i2cActionStart(&hi2c2, 35);
+      printf("send\n");
     }
+
+    i2cWatchDogReset();
   }
 }
 
@@ -180,10 +205,24 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c) {
  */
 void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c) {
   if (hi2c == &hi2c2) {
-    if (address == 0x3D) {
-      // TODO Обработчик окончания чтения данных мастером.
-      i2cWatchDogReset();
+//    if (address == 0x3D) {
+//      // TODO Обработчик окончания чтения данных мастером.
+//      i2cActionStop();
+//      i2cWatchDogReset();
+//    } else if (address == 0x3E) {
+//      // TODO Обработчик окончания чтения данных мастером.
+//      i2cActionStop();
+//      i2cWatchDogReset();
+//    }
+
+    i2cActionStop();
+
+    if (HAL_I2C_Slave_Receive_IT(hi2c, buf, 35) != HAL_BUSY) {
+      i2cActionStart(&hi2c2, 35);
+      printf("read\n");
     }
+
+    i2cWatchDogReset();
   }
 }
 
@@ -198,10 +237,14 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
   if (hi2c == &hi2c2) {
     uint32_t error = HAL_I2C_GetError(hi2c);
 
-    i2cErrorCounter++;
-
     if (error & HAL_I2C_ERROR_AF) {
-      __HAL_I2C_CLEAR_FLAG(hi2c, HAL_I2C_ERROR_AF);
+      // FIXME Тут может стоить проверить принятую посылку?!
+//      __HAL_I2C_CLEAR_FLAG(hi2c, HAL_I2C_ERROR_AF);
+      Debug::addMsg(Debug::MSG_i2cErrorCounterAf);
+      printf(" >> mode = %d", HAL_I2C_GetMode(hi2c));
+    } else {
+      i2cErrorCounter++;
+      i2cActionStop();
     }
   }
 }
@@ -261,23 +304,26 @@ void wrapperMainLoop() {
   pinstate = HAL_GPIO_ReadPin(Sout1_GPIO_Port, Sout1_Pin);
   HAL_GPIO_WritePin(COM_RC_GPIO_Port, COM_RC_Pin, pinstate);
 
-  HAL_I2C_EnableListen_IT(&hi2c2);
-
-
+//  HAL_I2C_EnableListen_IT(&hi2c2);
+  if (HAL_I2C_Slave_Receive_IT(&hi2c2, buf, 35) != HAL_BUSY) {
+    i2cActionStart(&hi2c2, 35);
+  }
 }
 
 // Сброс интерфейса I2Cю
 void i2cReset(I2C_HandleTypeDef *hi2c) {
     i2cWatchDogReset();
     HAL_I2C_DeInit(hi2c);
+
+    i2cErrorCounter = 0;
+    rpiConnection = false;
+
     HAL_I2C_Init(hi2c);
 
-    rpiConnection = false;
     Debug::addMsg(Debug::MSG_rpiConnectionNo);
 }
 
 void i2cWatchDogReset() {
-  i2cErrorCounter = 0;
   i2cWdTimer = I2C_TIME_RESET_MS;
 
   i2cAction = false;
@@ -285,12 +331,17 @@ void i2cWatchDogReset() {
 }
 
 void i2cActionStart(I2C_HandleTypeDef *hi2c, uint32_t size) {
-  // 1 start bit
-  // 8 data bits
-  // 1 ack/nack
-  // 1 stop
-  i2cActionTime = 2 + (size * 11 * 1000)/(hi2c->Init.ClockSpeed);
+  // Минимальное время на действие.
+  i2cActionTime = 2;
+  // 9 = 8 data bits + 1 ack/nack, старт и стоп биты по одному на всю посылку.
+  i2cActionTime += (size * 9 * 1000)/(hi2c->Init.ClockSpeed);
   i2cAction = true;
+
+}
+
+void i2cActionStop() {
+  i2cAction = false;
+  i2cActionTime = 100;
 }
 
 /// Сторожевой таймер для Raspberry.
