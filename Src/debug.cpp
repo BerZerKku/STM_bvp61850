@@ -31,7 +31,7 @@ Debug::Debug() {
 
 void Debug::addMsg(msg_t msg) {
   if (msg < sizeof(debug) * CHAR_BIT) {
-    debug |= (1 << msg);
+    debug |= (1UL << msg);
   }
 }
 
@@ -50,11 +50,11 @@ void Debug::proc() {
       case MSG_i2cActionTimeReset:
         printf("Reset by i2cActionTime!\n");
         break;
+      case MSG_i2cErrorCallback:
+        printf("MSG_i2cErrorCallback!\n");
+        break;
       case MSG_i2cErrorCounterAf:
         printf("MSG_i2cErrorCounterAf!\n");
-        break;
-      case MSG_i2cErrorCounterReset:
-        printf("Reset by i2cErrorCounter!\n");
         break;
       case MSG_HAL_I2C_AbortCpltCallback:
         printf("HAL_I2C_AbortCpltCallback!\n");
