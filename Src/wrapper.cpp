@@ -8,11 +8,13 @@
 
 #include "wrapper.hpp"
 
+#include <cassert>
 #include <stdio.h>
 #include "debug.h"
 #include "main.h"
 #include "CPP_bvpCommon/bvpCommon.hpp"
 
+using namespace BVP;
 
 extern I2C_HandleTypeDef hi2c2;
 extern IWDG_HandleTypeDef hiwdg;
@@ -26,6 +28,7 @@ extern UART_HandleTypeDef huart6;
 static void i2cReset(I2C_HandleTypeDef *hi2c);
 static void i2cActionStart(I2C_HandleTypeDef *hi2c, uint32_t size);
 static void i2cActionStop();
+static void i2cProcessing();
 static void i2cWatchDogReset();
 
 static void powerWatchDogOff();
@@ -35,6 +38,8 @@ static void rpiWatchDog();
 static void rpiWatchDogReset();
 static void rpiReset();
 
+#define I2C_ACTION_TIME_MIN_MS 20
+
 #define I2C_TIME_RESET_MS 100
 #define I2C_MAX_ERROR_COUNTER 5
 
@@ -42,6 +47,16 @@ static void rpiReset();
 
 #define RPI_REBOOT_TIME_MS 30000
 #define RPI_RESET_NO_CONNECT_MS 2000
+
+enum i2cState_t {
+  I2C_STATE_no = 0,
+  I2C_STATE_readWait,
+  I2C_STATE_readOk,
+  I2C_STATE_writeWait,
+  I2C_STATE_writeOk,
+  //
+  I2C_STATE_MAX
+};
 
 uint16_t address = 0;
 uint8_t direction = 0;
@@ -64,6 +79,10 @@ uint32_t rpiTimeToReset = RPI_REBOOT_TIME_MS;
 bool printDebug = true;
 uint32_t debug = 0;
 
+i2cState_t i2cState = I2C_STATE_no; /// Текущее состояние интерфейса
+
+BvpPkg bvpPkg;
+
 /**
  * @brief  Period elapsed callback in non-blocking mode
  * @param  htim TIM handle
@@ -73,7 +92,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
   static uint16_t cnt = 0;
 
   if (htim == &htim6) {
-    HAL_GPIO_TogglePin(TP2_GPIO_Port, TP2_Pin);
     HAL_GPIO_WritePin(LED2_VD8_GPIO_Port, LED2_VD8_Pin,
         rpiConnection ? GPIO_PIN_RESET : GPIO_PIN_SET);
 
@@ -107,6 +125,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
     powerWatchDog();
     rpiWatchDog();
+
     Debug::send();
   }
 }
@@ -122,9 +141,8 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c) {
   if (hi2c == &hi2c2) {
     i2cActionStop();
 
-    if (HAL_I2C_Slave_Transmit_IT(hi2c, buf, 36) != HAL_BUSY) {
-      i2cActionStart(&hi2c2, 36);
-    }
+    i2cState = (i2cState == I2C_STATE_readWait) ?
+        I2C_STATE_readOk : I2C_STATE_no;
 
     rpiWatchDogReset();
     i2cWatchDogReset();
@@ -142,14 +160,14 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c) {
   if (hi2c == &hi2c2) {
     i2cActionStop();
 
-    if (HAL_I2C_Slave_Receive_IT(&hi2c2, buf, 36) != HAL_BUSY) {
-      i2cActionStart(&hi2c2, 36);
-    }
+    i2cState = (i2cState == I2C_STATE_writeWait) ?
+        I2C_STATE_writeOk : I2C_STATE_no;
 
     rpiWatchDogReset();
     i2cWatchDogReset();
   }
 }
+
 
 /**
  * @brief  I2C error callback.
@@ -159,6 +177,8 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c) {
  */
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
   if (hi2c == &hi2c2) {
+    i2cActionStop();
+
     uint32_t error = HAL_I2C_GetError(hi2c);
 
     Debug::addMsg(Debug::MSG_i2cErrorCallback);
@@ -166,8 +186,8 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
       Debug::addMsg(Debug::MSG_i2cErrorCounterAf);
     }
 
+    i2cState = I2C_STATE_no;
     i2cErrorCounter++;
-    i2cActionStop();
   }
 }
 
@@ -180,7 +200,12 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
  */
 void HAL_I2C_AbortCpltCallback(I2C_HandleTypeDef *hi2c) {
   if (hi2c == &hi2c2) {
+    i2cActionStop();
+
     Debug::addMsg(Debug::MSG_HAL_I2C_AbortCpltCallback);
+
+    i2cState = I2C_STATE_no;
+    i2cErrorCounter++;
   }
 }
 
@@ -226,16 +251,14 @@ void wrapperMainLoop() {
   pinstate = HAL_GPIO_ReadPin(Sout1_GPIO_Port, Sout1_Pin);
   HAL_GPIO_WritePin(COM_RC_GPIO_Port, COM_RC_Pin, pinstate);
 
-//  HAL_I2C_EnableListen_IT(&hi2c2);
-  if (HAL_I2C_Slave_Receive_IT(&hi2c2, buf, 36) != HAL_BUSY) {
-    i2cActionStart(&hi2c2, 36);
-  }
+  i2cProcessing();
 }
 
 // Сброс интерфейса I2Cю
 void i2cReset(I2C_HandleTypeDef *hi2c) {
     i2cWatchDogReset();
 
+    i2cState = I2C_STATE_no;
     HAL_I2C_DeInit(hi2c);
     HAL_I2C_Init(hi2c);
 }
@@ -251,11 +274,11 @@ void i2cWatchDogReset() {
 //
 void i2cActionStart(I2C_HandleTypeDef *hi2c, uint32_t size) {
   // Минимальное время на действие.
-  i2cActionTime = 5;
+  // TODO Время на передачу между чтением и записью отличается! Нужно учесть в минимальном времени.
+  i2cActionTime = I2C_ACTION_TIME_MIN_MS;
   // 9 = 8 data bits + 1 ack/nack, старт и стоп биты по одному на всю посылку.
   i2cActionTime += (size * 9 * 1000)/(hi2c->Init.ClockSpeed);
   i2cAction = true;
-
 }
 
 //
@@ -315,3 +338,43 @@ void powerWatchDogOff() {
 #endif
   Debug::addMsg(Debug::MSG_powerTimeReset);
 }
+
+void i2cProcessing() {
+
+  if (i2cState > I2C_STATE_MAX) {
+    i2cState = I2C_STATE_MAX;
+  }
+
+  switch(i2cState) {
+    case I2C_STATE_no: {
+      if (HAL_I2C_Slave_Receive_IT(&hi2c2, buf, 36) != HAL_BUSY) {
+        i2cState = I2C_STATE_readWait;
+        i2cActionStart(&hi2c2, 36);
+      }
+    } break;
+
+    case I2C_STATE_readWait: {
+    } break;
+
+    case I2C_STATE_readOk: {
+      if (HAL_I2C_Slave_Transmit_IT(&hi2c2, buf, 36) != HAL_BUSY) {
+        i2cState = I2C_STATE_writeWait;
+        i2cActionStart(&hi2c2, 36);
+      }
+    } break;
+
+    case  I2C_STATE_writeWait: {
+    } break;
+
+    case  I2C_STATE_writeOk: {
+      i2cState = I2C_STATE_no;
+    } break;
+
+    case I2C_STATE_MAX: {
+      assert(false);
+    } break;
+  }
+
+  HAL_GPIO_WritePin(TP2_GPIO_Port, TP2_Pin, GPIO_PIN_RESET);
+}
+
