@@ -27,12 +27,17 @@ static void i2cActionStart(I2C_HandleTypeDef *hi2c, uint32_t size);
 static void i2cActionStop();
 static void i2cWatchDogReset();
 
+static void powerWatchDogOff();
+static void powerWatchDog();
+
 static void rpiWatchDog();
 static void rpiWatchDogReset();
 static void rpiReset();
 
 #define I2C_TIME_RESET_MS 100
 #define I2C_MAX_ERROR_COUNTER 5
+
+#define POWER_OFF_TIME_MS 100
 
 #define RPI_REBOOT_TIME_MS 30000
 #define RPI_RESET_NO_CONNECT_MS 2000
@@ -48,6 +53,9 @@ uint32_t i2cErrorCounter = 0;
 uint32_t i2cErrorCounterAf = 0;
 uint32_t i2cWdTimer = I2C_TIME_RESET_MS;
 uint64_t data = 0;
+
+bool power = true;
+uint32_t powerOffTime = POWER_OFF_TIME_MS;
 
 bool rpiConnection = false;
 uint32_t rpiTimeToReset = RPI_REBOOT_TIME_MS;
@@ -84,12 +92,19 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     }
 
     if ((i2cActionTime > 0) && i2cAction) {
-      if (i2cActionTime-- == 0) {
+      if (--i2cActionTime == 0) {
         Debug::addMsg(Debug::MSG_i2cActionTimeReset);
         i2cReset(&hi2c2);
       }
     }
 
+    if (powerOffTime > 0) {
+      if (--powerOffTime == 0) {
+        powerWatchDogOff();
+      }
+    }
+
+    powerWatchDog();
     rpiWatchDog();
     Debug::send();
   }
@@ -224,6 +239,7 @@ void i2cReset(I2C_HandleTypeDef *hi2c) {
     HAL_I2C_Init(hi2c);
 }
 
+//
 void i2cWatchDogReset() {
   i2cWdTimer = I2C_TIME_RESET_MS;
 
@@ -231,6 +247,7 @@ void i2cWatchDogReset() {
   i2cActionTime = 100;
 }
 
+//
 void i2cActionStart(I2C_HandleTypeDef *hi2c, uint32_t size) {
   // Минимальное время на действие.
   i2cActionTime = 5;
@@ -240,6 +257,7 @@ void i2cActionStart(I2C_HandleTypeDef *hi2c, uint32_t size) {
 
 }
 
+//
 void i2cActionStop() {
   i2cAction = false;
   i2cActionTime = 100;
@@ -260,16 +278,39 @@ void rpiWatchDog() {
   }
 }
 
+//
 void rpiWatchDogReset() {
   // FIXME сделать сброс только для корректно принятых пакетов!
   rpiConnection = true;
   rpiTimeToReset = RPI_RESET_NO_CONNECT_MS;
 }
 
+//
 void rpiReset() {
 #ifdef NDEBUG
   HAL_GPIO_WritePin(RASP_RESET_GPIO_Port, RASP_RESET_Pin, GPIO_PIN_RESET);
 #endif
   rpiConnection = false;
   Debug::addMsg(Debug::MSG_rpiReset);
+}
+
+// TODO переделать на прерывание ?!
+void powerWatchDog() {
+  GPIO_PinState pinstate = GPIO_PIN_RESET;
+
+  pinstate = HAL_GPIO_ReadPin(EXT_PWR_DOWN_GPIO_Port, EXT_PWR_DOWN_Pin);
+  if (pinstate == GPIO_PIN_SET) {
+    powerOffTime = POWER_OFF_TIME_MS;
+  } else {
+    Debug::addMsg(Debug::MSG_powerExtPwrDownIsLow);
+  }
+}
+
+//
+void powerWatchDogOff() {
+  // При выключении необходимо удерживать распберии в сбросе.
+#ifdef NDEBUG
+  HAL_GPIO_WritePin(BACKUP_EN_GPIO_Port, BACKUP_EN_Pin, GPIO_PIN_SET);
+#endif
+  Debug::addMsg(Debug::MSG_powerTimeReset);
 }

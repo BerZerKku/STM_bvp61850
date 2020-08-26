@@ -30,9 +30,10 @@ public:
     MSG_i2cAddrCallback_0x3D,
     MSG_i2cAddrCallback_0x3E,
     MSG_i2cAddrCallbackError,
+    MSG_powerExtPwrDownIsLow,
+    MSG_powerTimeReset,
     MSG_rpiConnectionNo,
-    MSG_rpiReset,
-
+    MSG_rpiReset
   };
 
   Debug();

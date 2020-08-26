@@ -68,6 +68,12 @@ void Debug::proc() {
       case MSG_i2cAddrCallbackError:
         printf("MSG_i2cAddrCallbackError\n!");
         break;
+      case MSG_powerExtPwrDownIsLow:
+      printf("powerExtPwrDownIsLow!\n");
+        break;
+      case MSG_powerTimeReset:
+        printf("powerTimeReset!\n");
+        break;
       case MSG_rpiConnectionNo:
         printf("rpiConnectionNo!\n");
         break;
