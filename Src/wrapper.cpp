@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include "debug.h"
 #include "main.h"
+#include "CPP_bvpCommon/bvpCommon.hpp"
 
 
 extern I2C_HandleTypeDef hi2c2;
