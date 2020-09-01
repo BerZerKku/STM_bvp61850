@@ -52,6 +52,7 @@ enum i2cState_t {
   I2C_STATE_no = 0,
   I2C_STATE_readWait,
   I2C_STATE_readOk,
+  I2C_STATE_write,
   I2C_STATE_writeWait,
   I2C_STATE_writeOk,
   //
@@ -81,7 +82,7 @@ uint32_t debug = 0;
 
 i2cState_t i2cState = I2C_STATE_no; /// Текущее состояние интерфейса
 
-BvpPkg bvpPkg;
+BvpPkg bvpPkg(BvpPkg::MODE_slave);
 
 /**
  * @brief  Period elapsed callback in non-blocking mode
@@ -121,6 +122,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
       if (--powerOffTime == 0) {
         powerWatchDogOff();
       }
+    }
+
+    if (!rpiConnection) {
+      Debug::addMsg(Debug::MSG_rpiConnectionNo);
     }
 
     powerWatchDog();
@@ -230,10 +235,6 @@ void wrapperMainLoop() {
   pinstate = HAL_GPIO_ReadPin(Sout7_GPIO_Port, Sout7_Pin);
   pinstate = rpiConnection ? pinstate : GPIO_PIN_SET;
 
-  if (!rpiConnection) {
-    Debug::addMsg(Debug::MSG_rpiConnectionNo);
-  }
-
   HAL_GPIO_WritePin(ALARM_GPIO_Port, ALARM_Pin, pinstate);
 
   pinstate = HAL_GPIO_ReadPin(Sout6_GPIO_Port, Sout6_Pin);
@@ -256,11 +257,11 @@ void wrapperMainLoop() {
 
 // Сброс интерфейса I2Cю
 void i2cReset(I2C_HandleTypeDef *hi2c) {
-    i2cWatchDogReset();
+  i2cWatchDogReset();
 
-    i2cState = I2C_STATE_no;
-    HAL_I2C_DeInit(hi2c);
-    HAL_I2C_Init(hi2c);
+  i2cState = I2C_STATE_no;
+  HAL_I2C_DeInit(hi2c);
+  HAL_I2C_Init(hi2c);
 }
 
 //
@@ -340,6 +341,10 @@ void powerWatchDogOff() {
 }
 
 void i2cProcessing() {
+  uint8_t *buf = nullptr;
+  uint16_t len = 0;
+  uint8_t data[DATA_LEN];
+
 
   if (i2cState > I2C_STATE_MAX) {
     i2cState = I2C_STATE_MAX;
@@ -347,9 +352,10 @@ void i2cProcessing() {
 
   switch(i2cState) {
     case I2C_STATE_no: {
-      if (HAL_I2C_Slave_Receive_IT(&hi2c2, buf, 36) != HAL_BUSY) {
+      buf = bvpPkg.getRxPkg(len);
+      if (HAL_I2C_Slave_Receive_IT(&hi2c2, buf, len) != HAL_BUSY) {
         i2cState = I2C_STATE_readWait;
-        i2cActionStart(&hi2c2, 36);
+        i2cActionStart(&hi2c2, len);
       }
     } break;
 
@@ -357,9 +363,26 @@ void i2cProcessing() {
     } break;
 
     case I2C_STATE_readOk: {
-      if (HAL_I2C_Slave_Transmit_IT(&hi2c2, buf, 36) != HAL_BUSY) {
+      len = 1;
+      if (bvpPkg.getDataFromPkg(data, len)) {
+        // FIXME Обратно передается полученный пакет
+        // TODO Добавить обработку принятого пакета.
+        // TODO  Добавить формирование пакета на передачу.
+        if (bvpPkg.addDataToPkg(data, len)) {
+          i2cState = I2C_STATE_write;
+        } else {
+          i2cState = I2C_STATE_no;
+        }
+      } else {
+        i2cState = I2C_STATE_no;
+      }
+    } break;
+
+    case I2C_STATE_write: {
+      buf = bvpPkg.getRxPkg(len);
+      if (HAL_I2C_Slave_Transmit_IT(&hi2c2, buf, len) != HAL_BUSY) {
         i2cState = I2C_STATE_writeWait;
-        i2cActionStart(&hi2c2, 36);
+        i2cActionStart(&hi2c2, len);
       }
     } break;
 

@@ -15,7 +15,7 @@ extern "C" int _write(int file, char *ptr, int len);
 
 class Debug {
   /// Размер буфера.
-  static const int c_bufSize = 256;
+  static const uint16_t c_bufSize = 512;
 
   /// Функция записи данных в буфер передачи.
   friend int _write(int file, char *ptr, int len);
@@ -33,7 +33,9 @@ public:
     MSG_powerExtPwrDownIsLow,
     MSG_powerTimeReset,
     MSG_rpiConnectionNo,
-    MSG_rpiReset
+    MSG_rpiReset,
+    //
+    MSG_MAX
   };
 
   Debug();
@@ -43,8 +45,12 @@ public:
   static void send();
 
 private:
+  static TFifo<Debug::c_bufSize, char> buf;
+
   static uint32_t debug;
-  static TFifo<Debug::c_bufSize, int> buf;
+
+  static uint32_t msgCnt[MSG_MAX];
+  static const char *msgString[];
 };
 
 #endif /* DEBUG_H_ */

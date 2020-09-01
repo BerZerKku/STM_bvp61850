@@ -111,6 +111,7 @@
 							</tool>
 						</toolChain>
 					</folderInfo>
+					<fileInfo id="fr.ac6.managedbuild.config.gnu.cross.exe.debug.52021054.2117526729" name="bvpCommon.hpp" rcbsApplicability="disable" resourcePath="CPP_bvpCommon/bvpCommon.hpp" toolsToInvoke=""/>
 					<sourceEntries>
 						<entry excluding="main.cpp|test" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="CPP_bvpCommon"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
@@ -253,7 +254,7 @@
 	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
 	<storageModule moduleId="refreshScope" versionNumber="2">
 		<configuration configurationName="Debug">
-			<resource resourceType="PROJECT" workspacePath="BVP_61850"/>
+			<resource resourceType="PROJECT" workspacePath="/BVP_61850"/>
 		</configuration>
 		<configuration configurationName="Release"/>
 	</storageModule>
