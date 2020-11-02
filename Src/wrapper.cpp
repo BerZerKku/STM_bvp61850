@@ -13,6 +13,7 @@
 #include "debug.h"
 #include "main.h"
 #include "CPP_bvpCommon/bvpCommon.hpp"
+#include "CPP_bvpCommon/modbus.h"
 
 using namespace BVP;
 
@@ -20,6 +21,7 @@ extern I2C_HandleTypeDef hi2c2;
 extern IWDG_HandleTypeDef hiwdg;
 extern SPI_HandleTypeDef hspi1;
 extern TIM_HandleTypeDef htim6;
+extern TIM_HandleTypeDef htim7;
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
 extern UART_HandleTypeDef huart3;
@@ -38,6 +40,8 @@ static void rpiWatchDog();
 static void rpiWatchDogReset();
 static void rpiReset();
 
+static void modbusPoll();
+
 #define I2C_ACTION_TIME_MIN_MS 20
 
 #define I2C_TIME_RESET_MS 100
@@ -48,6 +52,33 @@ static void rpiReset();
 #define RPI_REBOOT_TIME_MS 30000
 #define RPI_RESET_NO_CONNECT_MS 2000
 
+//
+TParam params;
+TModbus modbus;
+//uint8_t uart6TxBuf;
+//uint8_t uart6RxBuf;
+//uint8_t uart6buf[128];
+//TSerialProtocol *uart6protocol;
+
+template <size_t size, typename type>
+struct protocol_t {
+  type rxByte;
+  type txByte;
+  type buf[size];
+  BVP::TSerialProtocol *protocol;
+};
+
+protocol_t<128, uint8_t> uart6ln;
+
+//template <size_t size, typename type>
+//class protocol_t {
+//  type rxByte;
+//  type txByte;
+//  type buf[size];
+//  BVP::TSerialProtocol *protocol;
+//};
+
+//
 enum i2cState_t {
   I2C_STATE_no = 0,
   I2C_STATE_readWait,
@@ -83,6 +114,35 @@ uint32_t debug = 0;
 i2cState_t i2cState = I2C_STATE_no; /// Текущее состояние интерфейса
 
 BvpPkg bvpPkg(BvpPkg::MODE_slave);
+
+/**
+ *
+ */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
+  if(huart == &huart6){
+    modbus.sendFinished();
+    HAL_UART_Receive_IT(&huart6, &uart6ln.rxByte, 1);
+//      while(modbus.pop(uart6ln.txByte));
+
+//    if (modbus.pop(uart6ln.txByte)) {
+//      if (HAL_UART_Transmit_IT(&huart6, &uart6ln.txByte, 1) != HAL_OK) {
+//        printf("state= %d\n", HAL_UART_GetState(huart));
+//      }
+//    } else {
+//
+//    }
+  }
+}
+
+/**
+ *
+ */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+  if(huart == &huart6) {
+    uart6ln.protocol->push(uart6ln.rxByte);
+    HAL_UART_Receive_IT(&huart6, &uart6ln.rxByte, 1);
+  }
+}
 
 /**
  * @brief  Period elapsed callback in non-blocking mode
@@ -132,6 +192,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     rpiWatchDog();
 
     Debug::send();
+  } else if (htim == &htim7) {
+    modbus.tick();
   }
 }
 
@@ -222,7 +284,26 @@ void wrapperMainInit() {
   HAL_Delay(10);
   printf("Hello STM32\n");
 
-  HAL_TIM_Base_Start_IT(&htim6);
+  params.setValue(BVP::PARAM_vpBtnSAnSbSac, BVP::SRC_pi, 0);
+  params.setValue(BVP::PARAM_vpBtnSA32to01, BVP::SRC_pi, 0);
+  params.setValue(BVP::PARAM_vpBtnSA64to33, BVP::SRC_pi, 0);
+  params.setValue(BVP::PARAM_blkComPrm32to01, BVP::SRC_pi, 0x50505050);
+  params.setValue(BVP::PARAM_blkComPrm64to33, BVP::SRC_pi, 0);
+  params.setValue(BVP::PARAM_blkComPrd32to01, BVP::SRC_pi, 0);
+  params.setValue(BVP::PARAM_blkComPrd64to33, BVP::SRC_pi, 0);
+  params.setValue(BVP::PARAM_dirControl, BVP::SRC_pi, BVP::DIR_CONTROL_local);
+  params.setValue(BVP::PARAM_blkComPrmAll, BVP::SRC_pi, BVP::ON_OFF_on);
+  params.setValue(BVP::PARAM_blkComPrmDir, BVP::SRC_pi, 0x55);
+
+  uart6ln.protocol = &modbus;
+  uart6ln.protocol->setBuffer(uart6ln.buf, sizeof(uart6ln.buf) / sizeof(uart6ln.buf[0]));
+  uart6ln.protocol->setNetAddress(0x0A);
+  uart6ln.protocol->setID(SRC_vkey);
+  uart6ln.protocol->setTimeTick(100);
+  uart6ln.protocol->setup(huart6.Init.BaudRate,
+      (huart6.Init.Parity != UART_PARITY_NONE),
+      (huart6.Init.StopBits == UART_STOPBITS_2) ? 2 : 1);
+  uart6ln.protocol->setEnable(true);
 }
 
 
@@ -253,6 +334,8 @@ void wrapperMainLoop() {
   HAL_GPIO_WritePin(COM_RC_GPIO_Port, COM_RC_Pin, pinstate);
 
   i2cProcessing();
+
+  modbusPoll();
 }
 
 // Сброс интерфейса I2Cю
@@ -399,5 +482,19 @@ void i2cProcessing() {
   }
 
   HAL_GPIO_WritePin(TP2_GPIO_Port, TP2_Pin, GPIO_PIN_RESET);
+}
+
+void modbusPoll() {
+  if (modbus.read()) {
+
+  }
+
+  if (modbus.write()) {
+    uint8_t *data = nullptr;
+    uint16_t len = modbus.pop(&data);
+    if (len > 0) {
+      HAL_UART_Transmit_IT(&huart6, data, len);
+    }
+  }
 }
 
