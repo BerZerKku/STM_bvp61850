@@ -41,8 +41,7 @@ static void rpiWatchDog();
 static void rpiWatchDogReset();
 static void rpiReset();
 
-static void avantPiPoll();
-static void modbusPoll();
+static void protocolPoll();
 
 #define I2C_ACTION_TIME_MIN_MS 20
 
@@ -56,27 +55,29 @@ static void modbusPoll();
 
 //
 TParam params;
-TModbusVp modbus;
+TModbusVp modbusVp;
 TAvantPi avantPi;
 
 template <size_t size, typename type>
-struct protocol_t {
+struct port_t {
   type rxByte;
   type txByte;
   type buf[size];
-  BVP::TSerialProtocol *protocol;
+  BVP::TSerialProtocol *protocol = nullptr;
+  UART_HandleTypeDef *huart = nullptr;
 };
 
-protocol_t<256, uint8_t> uart6ln;
-protocol_t<256, uint8_t> uart1pi;
+enum ePort_t {
+  PORT_PI = 0,  ///< Связь с БСП-ПИ (UART1)
+  PORT_LN,      ///< Локальная сеть (UART6)
+  PORT_DR,      ///< Цифровой переприем (UART3 + EnDr)
+  PORT_PC,      ///< Связь с ПК (Virtual Port Com)
+  PORT_RPi,      ///< Связь с RPi (I2C2 или UART2)
+  //
+  PORT_MAX
+};
 
-//template <size_t size, typename type>
-//class protocol_t {
-//  type rxByte;
-//  type txByte;
-//  type buf[size];
-//  BVP::TSerialProtocol *protocol;
-//};
+port_t<256, uint8_t> port[PORT_MAX];
 
 //
 enum i2cState_t {
@@ -119,12 +120,12 @@ BvpPkg bvpPkg(BvpPkg::MODE_slave);
  *
  */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
-  if (huart == &huart1) {
-    uart1pi.protocol->sendFinished();
-    HAL_UART_Receive_IT(&huart1, &uart1pi.rxByte, 1);
-  } else if(huart == &huart6){
-    uart6ln.protocol->sendFinished();
-    HAL_UART_Receive_IT(&huart6, &uart6ln.rxByte, 1);
+  for(uint8_t i = 0; i < (sizeof(port) / sizeof(port[0])); i++) {
+    if ((huart == port[i].huart) && (port[i].protocol != nullptr)) {
+      port[i].protocol->sendFinished();
+      HAL_UART_Receive_IT(huart, &port[i].rxByte, 1);
+      break;
+    }
   }
 }
 
@@ -132,13 +133,13 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
  *
  */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-  if (huart == &huart1) {
-    uart1pi.protocol->push(uart1pi.rxByte);
-    HAL_UART_Receive_IT(&huart1, &uart1pi.rxByte, 1);
-  } else if (huart == &huart6) {
-    uart6ln.protocol->push(uart6ln.rxByte);
-    HAL_UART_Receive_IT(&huart6, &uart6ln.rxByte, 1);
-  }
+  for(uint8_t i = 0; i < (sizeof(port) / sizeof(port[0])); i++) {
+      if ((huart == port[i].huart) && (port[i].protocol != nullptr)) {
+        port[i].protocol->push(port[i].rxByte);
+        HAL_UART_Receive_IT(huart, &port[i].rxByte, 1);
+        break;
+      }
+    }
 }
 
 /**
@@ -146,9 +147,12 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
  */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
   // TODO Проверить работает ли данный обработчик
-  if(huart == &huart6) {
-    uart6ln.protocol->readError();
-    HAL_UART_Receive_IT(&huart6, &uart6ln.rxByte, 1);
+  for(uint8_t i = 0; i < (sizeof(port) / sizeof(port[0])); i++) {
+    if ((huart == port[i].huart) && (port[i].protocol != nullptr)) {
+      port[i].protocol->readError();
+      HAL_UART_Receive_IT(huart, &port[i].rxByte, 1);
+      break;
+    }
   }
 }
 
@@ -201,8 +205,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
     Debug::send();
   } else if (htim == &htim7) {
-    modbus.tick();
-    avantPi.tick();
+    for(uint8_t i = 0; i < (sizeof(port) / sizeof(port[0])); i++) {
+      TSerialProtocol *p = port[i].protocol;
+      if ((p!= nullptr) && p->isEnable()) {
+        p->tick();
+      }
+    }
+//    modbus.tick();
+//    avantPi.tick();
   }
 }
 
@@ -304,25 +314,31 @@ void wrapperMainInit() {
   params.setValue(BVP::PARAM_blkComPrmAll, BVP::SRC_pi, BVP::ON_OFF_on);
   params.setValue(BVP::PARAM_blkComPrmDir, BVP::SRC_pi, 0x55);
 
-  uart6ln.protocol = &modbus;
-  uart6ln.protocol->setBuffer(uart6ln.buf, sizeof(uart6ln.buf) / sizeof(uart6ln.buf[0]));
-  uart6ln.protocol->setNetAddress(0x0A);
-  uart6ln.protocol->setID(SRC_vkey);
-  uart6ln.protocol->setTimeTick(100);
-  uart6ln.protocol->setup(huart6.Init.BaudRate,
-      (huart6.Init.Parity != UART_PARITY_NONE),
-      (huart6.Init.StopBits == UART_STOPBITS_2) ? 2 : 1);
-  uart6ln.protocol->setEnable(true);
+  ePort_t index = PORT_PI;
+  port[index].huart = &huart1;
+  port[index].protocol = &avantPi;
+  port[index].protocol->setNetAddress(0x01);
+    port[index].protocol->setID(SRC_pi);
+  port[index].protocol->setBuffer(port[index].buf,
+        sizeof(port[index].buf) / sizeof(port[index].buf[0]));
+  port[index].protocol->setTimeTick(100);
+  port[index].protocol->setup(port[index].huart->Init.BaudRate,
+      (port[index].huart->Init.Parity != UART_PARITY_NONE),
+      (port[index].huart->Init.StopBits == UART_STOPBITS_2) ? 2 : 1);
+  port[index].protocol->setEnable(true);
 
-  uart1pi.protocol = &avantPi;
-  uart1pi.protocol->setBuffer(uart1pi.buf, sizeof(uart1pi.buf) / sizeof(uart1pi.buf[0]));
-  uart1pi.protocol->setNetAddress(0x01);
-  uart1pi.protocol->setID(SRC_pi);
-  uart1pi.protocol->setTimeTick(100);
-  uart1pi.protocol->setup(huart1.Init.BaudRate,
-      (huart1.Init.Parity != UART_PARITY_NONE),
-      (huart1.Init.StopBits == UART_STOPBITS_2) ? 2 : 1);
-  uart1pi.protocol->setEnable(true);
+  index = PORT_DR;
+  port[index].huart = &huart3;
+  port[index].protocol = &modbusVp;
+  port[index].protocol->setNetAddress(0x0A);
+  port[index].protocol->setID(SRC_vkey);
+  port[index].protocol->setBuffer(port[index].buf,
+      sizeof(port[index].buf) / sizeof(port[index].buf[0]));
+  port[index].protocol->setTimeTick(100);
+  port[index].protocol->setup(port[index].huart->Init.BaudRate,
+      (port[index].huart->Init.Parity != UART_PARITY_NONE),
+      (port[index].huart->Init.StopBits == UART_STOPBITS_2) ? 2 : 1);
+  port[index].protocol->setEnable(true);
 }
 
 
@@ -354,8 +370,8 @@ void wrapperMainLoop() {
 
   i2cProcessing();
 
-  avantPiPoll();
-  modbusPoll();
+//  avantPiPoll();
+  protocolPoll();
 }
 
 // Сброс интерфейса I2Cю
@@ -504,35 +520,27 @@ void i2cProcessing() {
   HAL_GPIO_WritePin(TP2_GPIO_Port, TP2_Pin, GPIO_PIN_RESET);
 }
 
-void avantPiPoll() {
-  TSerialProtocol *p = uart1pi.protocol;
+void protocolPoll() {
+  for(uint8_t i = 0; i < (sizeof(port) / sizeof(port[0])); i++) {
+    TSerialProtocol *p = port[i].protocol;
 
-  if (p->isEnable()) {
-    p->read();
+    if ((p != nullptr) && p->isEnable()) {
+      p->read();
 
-    if (p->write()) {
-      uint8_t *data = nullptr;
-      uint16_t len = p->pop(&data);
-      if (len > 0) {
-        HAL_UART_Transmit_IT(&huart1, data, len);
+      if (p->write()) {
+        uint8_t *data = nullptr;
+        uint16_t len = p->pop(&data);
+        if ((len > 0) && (port[i].huart != nullptr)) {
+          HAL_UART_Transmit_IT(port[i].huart, data, len);
+        }
       }
     }
   }
-}
 
-void modbusPoll() {
-  TSerialProtocol *p = uart6ln.protocol;
-
-  if (p->isEnable()) {
-    p->read();
-
-    if (p->write()) {
-      uint8_t *data = nullptr;
-      uint16_t len = p->pop(&data);
-      if (len > 0) {
-        HAL_UART_Transmit_IT(&huart6, data, len);
-      }
-    }
+  // XXX There is no net "EnDR" on KVP_05v0.
+  if (port[PORT_DR].protocol != nullptr) {
+    HAL_GPIO_WritePin(En_DR_GPIO_Port, En_DR_Pin,
+        port[PORT_DR].protocol->isEnable() ? GPIO_PIN_SET : GPIO_PIN_RESET);
   }
 }
 
