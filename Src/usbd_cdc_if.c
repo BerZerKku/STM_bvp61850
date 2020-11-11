@@ -65,8 +65,8 @@
 /* USER CODE BEGIN PRIVATE_DEFINES */
 /* Define size for the receive and transmit buffer over CDC */
 /* It's up to user to redefine and/or remove those define */
-#define APP_RX_DATA_SIZE  2048
-#define APP_TX_DATA_SIZE  2048
+#define APP_RX_DATA_SIZE  256
+#define APP_TX_DATA_SIZE  256
 /* USER CODE END PRIVATE_DEFINES */
 
 /**
@@ -184,6 +184,8 @@ static int8_t CDC_DeInit_FS(void)
   */
 static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 {
+  static uint8_t tempbuf[7];
+
   /* USER CODE BEGIN 5 */
   switch(cmd)
   {
@@ -225,11 +227,11 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
   /* 6      | bDataBits  |   1   | Number Data bits (5, 6, 7, 8 or 16).          */
   /*******************************************************************************/
     case CDC_SET_LINE_CODING:
-
+      memcpy(tempbuf, pbuf, sizeof(tempbuf) / sizeof(tempbuf[0]));
     break;
 
     case CDC_GET_LINE_CODING:
-
+      memcpy(pbuf, tempbuf, sizeof(tempbuf) / sizeof(tempbuf[0]));
     break;
 
     case CDC_SET_CONTROL_LINE_STATE:
@@ -268,6 +270,9 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   /* USER CODE BEGIN 6 */
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+
+  CdcReceiveFsCallback(Buf, Len);
+
   return (USBD_OK);
   /* USER CODE END 6 */
 }
@@ -316,6 +321,9 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   UNUSED(Buf);
   UNUSED(Len);
   UNUSED(epnum);
+
+  CdcTransmitCpltFsCallback();
+
   /* USER CODE END 13 */
   return result;
 }

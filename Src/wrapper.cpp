@@ -7,14 +7,17 @@
 
 
 #include "wrapper.hpp"
+#include "debug.h"
+#include "main.h"
+#include "usbd_cdc_if.h"
 
 #include <cassert>
 #include <stdio.h>
-#include "debug.h"
-#include "main.h"
+
 #include "CPP_bvpCommon/bvpCommon.hpp"
 #include "CPP_bvpCommon/serial/modbusVp.h"
 #include "CPP_bvpCommon/serial/avantpi.h"
+#include "CPP_bvpCommon/serial/avantpc.h"
 
 using namespace BVP;
 
@@ -57,25 +60,35 @@ static void protocolPoll();
 TParam params;
 TModbusVp modbusVp;
 TAvantPi avantPi;
-
-template <size_t size, typename type>
-struct port_t {
-  type rxByte;
-  type txByte;
-  type buf[size];
-  BVP::TSerialProtocol *protocol = nullptr;
-  UART_HandleTypeDef *huart = nullptr;
-};
+TAvantPc avantPc;
 
 enum ePort_t {
   PORT_PI = 0,  ///< Связь с БСП-ПИ (UART1)
   PORT_LN,      ///< Локальная сеть (UART6)
   PORT_DR,      ///< Цифровой переприем (UART3 + EnDr)
   PORT_PC,      ///< Связь с ПК (Virtual Port Com)
-  PORT_RPi,      ///< Связь с RPi (I2C2 или UART2)
+  PORT_RPi,     ///< Связь с RPi (I2C2 или UART2)
   //
   PORT_MAX
 };
+
+enum ePortType_t {
+  PORT_TYPE_uart = 0,
+  PORT_TYPE_usb,
+  PORT_TYPE_i2c
+};
+
+template <size_t size, typename type_t>
+struct port_t {
+  ePortType_t type;
+  type_t rxByte;
+  type_t txByte;
+  type_t buf[size];
+  BVP::TSerialProtocol *protocol = nullptr;
+  UART_HandleTypeDef *huart = nullptr;
+};
+
+
 
 port_t<256, uint8_t> port[PORT_MAX];
 
@@ -121,10 +134,17 @@ BvpPkg bvpPkg(BvpPkg::MODE_slave);
  */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
   for(uint8_t i = 0; i < (sizeof(port) / sizeof(port[0])); i++) {
-    if ((huart == port[i].huart) && (port[i].protocol != nullptr)) {
-      port[i].protocol->sendFinished();
-      HAL_UART_Receive_IT(huart, &port[i].rxByte, 1);
-      break;
+    if (port[i].type == PORT_TYPE_uart) {
+      if (huart == port[i].huart) {
+        TSerialProtocol *protocol = port[i].protocol;
+
+        if (protocol != nullptr) {
+          protocol->sendFinished();
+          HAL_UART_Receive_IT(huart, &port[i].rxByte, 1);
+        }
+
+        break;
+      }
     }
   }
 }
@@ -134,12 +154,19 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
  */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
   for(uint8_t i = 0; i < (sizeof(port) / sizeof(port[0])); i++) {
-      if ((huart == port[i].huart) && (port[i].protocol != nullptr)) {
-        port[i].protocol->push(port[i].rxByte);
-        HAL_UART_Receive_IT(huart, &port[i].rxByte, 1);
+    if (port[i].type == PORT_TYPE_uart) {
+      if (huart == port[i].huart) {
+        TSerialProtocol *protocol = port[i].protocol;
+
+        if (protocol != nullptr) {
+          protocol->push(port[i].rxByte);
+          HAL_UART_Receive_IT(huart, &port[i].rxByte, 1);
+        }
+
         break;
       }
     }
+  }
 }
 
 /**
@@ -148,13 +175,58 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
   // TODO Проверить работает ли данный обработчик
   for(uint8_t i = 0; i < (sizeof(port) / sizeof(port[0])); i++) {
-    if ((huart == port[i].huart) && (port[i].protocol != nullptr)) {
-      port[i].protocol->readError();
-      HAL_UART_Receive_IT(huart, &port[i].rxByte, 1);
+    if (port[i].type == PORT_TYPE_uart) {
+      if (huart == port[i].huart) {
+        TSerialProtocol *protocol = port[i].protocol;
+
+        if (protocol != nullptr) {
+          protocol->readError();
+          HAL_UART_Receive_IT(huart, &port[i].rxByte, 1);
+        }
+
+        break;
+      }
+    }
+  }
+}
+
+/**
+ *
+ */
+void CdcTransmitCpltFsCallback() {
+  for(uint8_t i = 0; i < (sizeof(port) / sizeof(port[0])); i++) {
+    if (port[i].type == PORT_TYPE_usb) {
+      TSerialProtocol *protocol = port[i].protocol;
+
+      if (protocol != nullptr) {
+        protocol->sendFinished();
+      }
+
       break;
     }
   }
 }
+
+/**
+ *
+ */
+void CdcReceiveFsCallback(uint8_t *buf, uint16_t len) {
+  for(uint8_t i = 0; i < (sizeof(port) / sizeof(port[0])); i++) {
+    if (port[i].type == PORT_TYPE_usb) {
+      TSerialProtocol *protocol = port[i].protocol;
+
+      if (protocol != nullptr) {
+        for(uint16_t i = 0; i < len; i++) {
+          protocol->push(buf[i]);
+        }
+      }
+
+      break;
+    }
+  }
+}
+
+
 
 /**
  * @brief  Period elapsed callback in non-blocking mode
@@ -211,8 +283,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
         p->tick();
       }
     }
-//    modbus.tick();
-//    avantPi.tick();
   }
 }
 
@@ -315,6 +385,7 @@ void wrapperMainInit() {
   params.setValue(BVP::PARAM_blkComPrmDir, BVP::SRC_pi, 0x55);
 
   ePort_t index = PORT_PI;
+  port[index].type = PORT_TYPE_uart;
   port[index].huart = &huart1;
   port[index].protocol = &avantPi;
   port[index].protocol->setNetAddress(0x01);
@@ -328,10 +399,24 @@ void wrapperMainInit() {
   port[index].protocol->setEnable(true);
 
   index = PORT_DR;
+  port[index].type = PORT_TYPE_uart;
   port[index].huart = &huart3;
   port[index].protocol = &modbusVp;
   port[index].protocol->setNetAddress(0x0A);
   port[index].protocol->setID(SRC_vkey);
+  port[index].protocol->setBuffer(port[index].buf,
+      sizeof(port[index].buf) / sizeof(port[index].buf[0]));
+  port[index].protocol->setTimeTick(100);
+  port[index].protocol->setup(port[index].huart->Init.BaudRate,
+      (port[index].huart->Init.Parity != UART_PARITY_NONE),
+      (port[index].huart->Init.StopBits == UART_STOPBITS_2) ? 2 : 1);
+  port[index].protocol->setEnable(true);
+
+  index = PORT_PC;
+  port[index].type = PORT_TYPE_usb;
+  port[index].protocol = &avantPc;
+  port[index].protocol->setNetAddress(0x01);
+  port[index].protocol->setID(SRC_pi);
   port[index].protocol->setBuffer(port[index].buf,
       sizeof(port[index].buf) / sizeof(port[index].buf[0]));
   port[index].protocol->setTimeTick(100);
@@ -530,8 +615,26 @@ void protocolPoll() {
       if (p->write()) {
         uint8_t *data = nullptr;
         uint16_t len = p->pop(&data);
-        if ((len > 0) && (port[i].huart != nullptr)) {
-          HAL_UART_Transmit_IT(port[i].huart, data, len);
+
+        Q_ASSERT(data != nullptr);
+
+        if (len > 0) {
+          switch(port[i].type) {
+            case PORT_TYPE_uart: {
+              if (port[i].huart != nullptr) {
+                HAL_UART_Transmit_IT(port[i].huart, data, len);
+              }
+            } break;
+
+            case PORT_TYPE_usb: {
+              uint8_t state = CDC_Transmit_FS(data, len);
+//              printf("send data to usb: %d\n", state);
+            } break;
+
+            case PORT_TYPE_i2c: {
+
+            } break;
+          }
         }
       }
     }
