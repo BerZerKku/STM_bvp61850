@@ -1,7 +1,7 @@
 /*
  * wrapper.c
  *
- *  Created on: 10 авг. 2020 г.
+ *  Created on: 10 пїЅпїЅпїЅ. 2020 пїЅ.
  *      Author: Shcheblykin
  */
 
@@ -58,16 +58,16 @@ static void protocolPoll();
 
 //
 TParam params;
-TModbusVp modbusVp;
-TAvantPi avantPi;
-TAvantPc avantPc;
+TModbusVp modbusVp(BVP::TSerialProtocol::REGIME_master);
+TAvantPi avantPi(BVP::TSerialProtocol::REGIME_master);
+TAvantPc avantPc(BVP::TSerialProtocol::REGIME_slave);
 
 enum ePort_t {
-  PORT_PI = 0,  ///< Связь с БСП-ПИ (UART1)
-  PORT_LN,      ///< Локальная сеть (UART6)
-  PORT_DR,      ///< Цифровой переприем (UART3 + EnDr)
-  PORT_PC,      ///< Связь с ПК (Virtual Port Com)
-  PORT_RPi,     ///< Связь с RPi (I2C2 или UART2)
+  PORT_PI = 0,  ///< пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅ-пїЅпїЅ (UART1)
+  PORT_LN,      ///< пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ (UART6)
+  PORT_DR,      ///< пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ (UART3 + EnDr)
+  PORT_PC,      ///< пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅ (Virtual Port Com)
+  PORT_RPi,     ///< пїЅпїЅпїЅпїЅпїЅ пїЅ RPi (I2C2 пїЅпїЅпїЅ UART2)
   //
   PORT_MAX
 };
@@ -125,7 +125,7 @@ uint32_t rpiTimeToReset = RPI_REBOOT_TIME_MS;
 bool printDebug = true;
 uint32_t debug = 0;
 
-i2cState_t i2cState = I2C_STATE_no; /// Текущее состояние интерфейса
+i2cState_t i2cState = I2C_STATE_no; /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 
 BvpPkg bvpPkg(BvpPkg::MODE_slave);
 
@@ -173,7 +173,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
  *
  */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
-  // TODO Проверить работает ли данный обработчик
+  // TODO пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
   for(uint8_t i = 0; i < (sizeof(port) / sizeof(port[0])); i++) {
     if (port[i].type == PORT_TYPE_uart) {
       if (huart == port[i].huart) {
@@ -366,7 +366,7 @@ void HAL_I2C_AbortCpltCallback(I2C_HandleTypeDef *hi2c) {
 }
 
 
-// Вызов после инициализации всей периферии в main().
+// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ main().
 void wrapperMainInit() {
 
   i2cWatchDogReset();
@@ -427,7 +427,7 @@ void wrapperMainInit() {
 }
 
 
-// Вызов из бесконечного цикла main().
+// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ main().
 void wrapperMainLoop() {
   HAL_IWDG_Refresh(&hiwdg);
 
@@ -459,7 +459,7 @@ void wrapperMainLoop() {
   protocolPoll();
 }
 
-// Сброс интерфейса I2Cю
+// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ I2CпїЅ
 void i2cReset(I2C_HandleTypeDef *hi2c) {
   i2cWatchDogReset();
 
@@ -478,10 +478,10 @@ void i2cWatchDogReset() {
 
 //
 void i2cActionStart(I2C_HandleTypeDef *hi2c, uint32_t size) {
-  // Минимальное время на действие.
-  // TODO Время на передачу между чтением и записью отличается! Нужно учесть в минимальном времени.
+  // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
+  // TODO пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ! пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
   i2cActionTime = I2C_ACTION_TIME_MIN_MS;
-  // 9 = 8 data bits + 1 ack/nack, старт и стоп биты по одному на всю посылку.
+  // 9 = 8 data bits + 1 ack/nack, пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
   i2cActionTime += (size * 9 * 1000)/(hi2c->Init.ClockSpeed);
   i2cAction = true;
 }
@@ -492,13 +492,13 @@ void i2cActionStop() {
   i2cActionTime = 100;
 }
 
-/// Сторожевой таймер для Raspberry.
+/// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ Raspberry.
 void rpiWatchDog() {
   if (rpiTimeToReset > 0) {
     rpiTimeToReset--;
   }
 
-  /// Сигнал сброса подается в течении одного такта таймера.
+  /// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
   if (rpiTimeToReset == 0) {
     rpiReset();
     rpiTimeToReset = RPI_REBOOT_TIME_MS;
@@ -509,7 +509,7 @@ void rpiWatchDog() {
 
 //
 void rpiWatchDogReset() {
-  // FIXME сделать сброс только для корректно принятых пакетов!
+  // FIXME пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ!
   rpiConnection = true;
   rpiTimeToReset = RPI_RESET_NO_CONNECT_MS;
 }
@@ -523,7 +523,7 @@ void rpiReset() {
   Debug::addMsg(Debug::MSG_rpiReset);
 }
 
-// TODO переделать на прерывание ?!
+// TODO пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ ?!
 void powerWatchDog() {
   GPIO_PinState pinstate = GPIO_PIN_RESET;
 
@@ -537,7 +537,7 @@ void powerWatchDog() {
 
 //
 void powerWatchDogOff() {
-  // При выключении необходимо удерживать распберии в сбросе.
+  // пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.
 #ifdef NDEBUG
   HAL_GPIO_WritePin(BACKUP_EN_GPIO_Port, BACKUP_EN_Pin, GPIO_PIN_SET);
 #endif
@@ -569,9 +569,9 @@ void i2cProcessing() {
     case I2C_STATE_readOk: {
       len = 1;
       if (bvpPkg.getDataFromPkg(data, len)) {
-        // FIXME Обратно передается полученный пакет
-        // TODO Добавить обработку принятого пакета.
-        // TODO  Добавить формирование пакета на передачу.
+        // FIXME пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ
+        // TODO пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.
+        // TODO  пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
         if (bvpPkg.addDataToPkg(data, len)) {
           i2cState = I2C_STATE_write;
         } else {
