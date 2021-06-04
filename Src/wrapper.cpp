@@ -93,11 +93,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
   static uint16_t cnt = 0;
 
   if (htim == &htim6) {
-    HAL_GPIO_WritePin(LED2_VD8_GPIO_Port, LED2_VD8_Pin,
-        rpiConnection ? GPIO_PIN_RESET : GPIO_PIN_SET);
-
     if (++cnt >= 1000) {
-      HAL_GPIO_TogglePin(LED1_VD7_GPIO_Port, LED1_VD7_Pin);
+        if (rpiConnection) {
+          HAL_GPIO_WritePin(LED1_VD7_GPIO_Port, LED1_VD7_Pin, GPIO_PIN_RESET);
+        } else {
+          HAL_GPIO_TogglePin(LED1_VD7_GPIO_Port, LED1_VD7_Pin);
+        }
       Debug::proc();
       cnt = 0;
     }
@@ -234,17 +235,22 @@ void wrapperMainLoop() {
 
   pinstate = HAL_GPIO_ReadPin(Sout7_GPIO_Port, Sout7_Pin);
   pinstate = rpiConnection ? pinstate : GPIO_PIN_SET;
-
   HAL_GPIO_WritePin(ALARM_GPIO_Port, ALARM_Pin, pinstate);
 
   pinstate = HAL_GPIO_ReadPin(Sout6_GPIO_Port, Sout6_Pin);
   HAL_GPIO_WritePin(WARNING_GPIO_Port, WARNING_Pin, pinstate);
 
   pinstate = HAL_GPIO_ReadPin(Sout5_GPIO_Port, Sout5_Pin);
+  pinstate = (pinstate == GPIO_PIN_SET) ? GPIO_PIN_RESET : GPIO_PIN_SET;
   HAL_GPIO_WritePin(HF_FAULT_GPIO_Port, HF_FAULT_Pin, pinstate);
 
   pinstate = HAL_GPIO_ReadPin(Sout4_GPIO_Port, Sout4_Pin);
+  pinstate = GPIO_PIN_SET;
   HAL_GPIO_WritePin(TEST_GOOSE_GPIO_Port, TEST_GOOSE_Pin, pinstate);
+
+  pinstate = HAL_GPIO_ReadPin(Sout3_GPIO_Port, Sout3_Pin);
+  pinstate = GPIO_PIN_SET;
+  HAL_GPIO_WritePin(LED2_VD8_GPIO_Port, LED2_VD8_Pin, pinstate);
 
   pinstate = HAL_GPIO_ReadPin(Sout2_GPIO_Port, Sout2_Pin);
   HAL_GPIO_WritePin(COM_TR_GPIO_Port, COM_TR_Pin, pinstate);
